@@ -78,17 +78,24 @@ def get_convert_date(message: types.Message):
 	try:
 		uniform_date_str = re.sub(r'\W+', '-', date_entered)
 		date_obj = datetime.strptime(uniform_date_str, '%d-%m-%Y')
+		today = datetime.now().date()
+		if date_obj.date() > today:
+			raise ValueError("Введенная дата не может быть позже сегодняшнего дня.")
+
 		date_str = date_obj.strftime('%Y-%m-%d')
 		if chat_id not in user_sessions:
 			user_sessions[chat_id] = {'date_str': date_str}
 		else:
 			user_sessions[chat_id]['date_str'] = date_str
 		calculate_gel_summ(message)
+	except ValueError as ve:
+		logging.error(f"Ошибка: {ve}")
+		msg = bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
 	except Exception as e:
 		logging.error(f"Ошибка при работе с введённой датой: {e}")
-		msg = bot.send_message(message.from_user.id, f'Напиши дату получения суммы в формате _день-месяц-год_, например _21-12-2023_', parse_mode='Markdown')
+		msg = bot.send_message(message.from_user.id, f'Напиши дату получения суммы в формате _день-месяц-год_, например _21-12-2023_', parse_mode='Markdown')		
+	finally:
 		bot.register_next_step_handler(msg, get_convert_date)
-
 
 def calculate_gel_summ(message):
 	chat_id = message.chat.id
@@ -106,6 +113,7 @@ def calculate_gel_summ(message):
 		local_date = f'{date_obj.day} {months_ru[date_obj.month]} {date_obj.year}'
 		bot.send_message(message.chat.id, f'• Курс {chosen_currency} на {local_date} составлял {currency_rate} \n• Сумма дохода в лари составила *{rounded_final_summ_lari}*', parse_mode='Markdown')
 		send_currency_keyboard(message.chat.id, 'Хочешь посчитать для другой даты или суммы? Просто выбери валюту.')
+		logging.info(f'Размер user_sessions: {len(user_sessions)}, размер кеша: {len(currency_cache)}')
 
 
 def request_currency_rate(date, chosen_currency):
