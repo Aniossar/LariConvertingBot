@@ -9,6 +9,12 @@ import requests
 import telebot
 import logging
 
+class FutureDateError(Exception):
+	def __init__(self, date, message="Future Date Error!"):
+		self.date = date
+		self.message = message
+		super().__init__(self.message)
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Ready Steady Go!")
 
@@ -74,21 +80,21 @@ def get_amount(message: types.Message):
 
 def get_convert_date(message: types.Message):
 	chat_id = message.chat.id
-	date_entered = (message.text)
+	date_entered = message.text
 	try:
 		uniform_date_str = re.sub(r'\W+', '-', date_entered)
 		date_obj = datetime.strptime(uniform_date_str, '%d-%m-%Y')
 		today = datetime.now().date()
 		if date_obj.date() > today:
-			raise ValueError("Введенная дата не может быть позже сегодняшнего дня.")
+			raise FutureDateError("Введенная дата не может быть позже сегодняшнего дня.")
 		date_str = date_obj.strftime('%Y-%m-%d')
 		if chat_id not in user_sessions:
 			user_sessions[chat_id] = {'date_str': date_str}
 		else:
 			user_sessions[chat_id]['date_str'] = date_str
 		calculate_gel_summ(message)
-	except ValueError as ve:
-		logging.error(f"Ошибка: {ve} Было введено {message.text}")
+	except FutureDateError as fde:
+		logging.error(f"Ошибка: {fde} Было введено {message.text}")
 		msg = bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
 		msg = bot.send_message(chat_id, f'Напиши дату получения суммы в формате _день-месяц-год_', parse_mode='Markdown')
 		bot.register_next_step_handler(msg, get_convert_date)
