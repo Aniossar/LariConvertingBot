@@ -81,7 +81,6 @@ def get_convert_date(message: types.Message):
 		today = datetime.now().date()
 		if date_obj.date() > today:
 			raise ValueError("Введенная дата не может быть позже сегодняшнего дня.")
-
 		date_str = date_obj.strftime('%Y-%m-%d')
 		if chat_id not in user_sessions:
 			user_sessions[chat_id] = {'date_str': date_str}
@@ -89,13 +88,15 @@ def get_convert_date(message: types.Message):
 			user_sessions[chat_id]['date_str'] = date_str
 		calculate_gel_summ(message)
 	except ValueError as ve:
-		logging.error(f"Ошибка: {ve}")
+		logging.error(f"Ошибка: {ve} Было введено {message.text}")
 		msg = bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
-	except Exception as e:
-		logging.error(f"Ошибка при работе с введённой датой: {e}")
-		msg = bot.send_message(message.from_user.id, f'Напиши дату получения суммы в формате _день-месяц-год_, например _21-12-2023_', parse_mode='Markdown')		
-	finally:
+		msg = bot.send_message(chat_id, f'Напиши дату получения суммы в формате _день-месяц-год_', parse_mode='Markdown')
 		bot.register_next_step_handler(msg, get_convert_date)
+	except Exception as e:
+		logging.error(f"Ошибка при работе с введённой датой: {e} Было введено {message.text}")
+		msg = bot.send_message(message.from_user.id, f'Напиши дату получения суммы в формате _день-месяц-год_, например _21-12-2023_', parse_mode='Markdown')
+		bot.register_next_step_handler(msg, get_convert_date)
+
 
 def calculate_gel_summ(message):
 	chat_id = message.chat.id
