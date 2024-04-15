@@ -30,7 +30,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 def send_currency_keyboard(chat_id, text='Выбери валюту'):
 	markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-	markup.add(types.KeyboardButton('USD'), types.KeyboardButton('EUR'))
+	markup.add(types.KeyboardButton('USD'), types.KeyboardButton('EUR'),  types.KeyboardButton('Сбросить'))
 	bot.send_message(chat_id, text, reply_markup=markup)
 
 
@@ -44,6 +44,8 @@ def start(message):
 def message_handler(message):
 	if message.text == 'USD' or message.text == 'EUR':
 		get_currency(message)
+	elif message.text == 'Сбросить':
+		start(message)
 	else:
 		bot.send_message(message.chat.id, "Пожалуйста, используй встроенную клавиатуру для выбора валюты.")
 
@@ -61,6 +63,9 @@ def get_currency(message: types.Message):
 
 def get_amount(message: types.Message):
 	chat_id = message.chat.id
+	if message.text == 'Сбросить':
+		start(message)
+		return
 	try:
 		message_text_normalized = message.text.replace(',', '.')
 		if math.isinf(float(message_text_normalized)):
@@ -80,6 +85,9 @@ def get_amount(message: types.Message):
 
 def get_convert_date(message: types.Message):
 	chat_id = message.chat.id
+	if message.text == 'Сбросить':
+		start(message)
+		return
 	date_entered = message.text
 	try:
 		uniform_date_str = re.sub(r'\W+', '-', date_entered)
@@ -95,7 +103,7 @@ def get_convert_date(message: types.Message):
 		calculate_gel_summ(message)
 	except FutureDateError as fde:
 		logging.error(f"Ошибка: {fde} Было введено {message.text}")
-		msg = bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
+		bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
 		msg = bot.send_message(chat_id, f'Напиши дату получения суммы в формате _день-месяц-год_', parse_mode='Markdown')
 		bot.register_next_step_handler(msg, get_convert_date)
 	except Exception as e:
