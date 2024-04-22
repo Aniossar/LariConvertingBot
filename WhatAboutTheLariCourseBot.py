@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from datetime import datetime
 from telebot import types
+from telebot_calendar import Calendar, CallbackData, RUSSIAN_LANGUAGE
 from bot_config import TELEGRAM_TOKEN
 import json
 import re
@@ -28,15 +29,18 @@ months_ru = {
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+calendar = Calendar(language=RUSSIAN_LANGUAGE)
+calendar_callback = CallbackData("calendar", "action", "year", "month", "day")
+
 def send_currency_keyboard(chat_id, text='Выбери валюту'):
 	markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-	markup.add(types.KeyboardButton('USD'), types.KeyboardButton('EUR'),  types.KeyboardButton('Сбросить'))
+	markup.add(types.KeyboardButton('USD'), types.KeyboardButton('EUR'))
 	bot.send_message(chat_id, text, reply_markup=markup)
 
 
 @bot.message_handler(commands=['start'])
 def start(message):
-	bot.send_message(message.from_user.id, 'Выбери валюту')
+	bot.send_message(message.chat.id, 'Выбери валюту')
 	send_currency_keyboard(message.chat.id, 'Пожалуйста, используй встроенную клавиатуру для выбора валюты.')
 
 
@@ -44,10 +48,42 @@ def start(message):
 def message_handler(message):
 	if message.text == 'USD' or message.text == 'EUR':
 		get_currency(message)
-	elif message.text == 'Сбросить':
-		start(message)
 	else:
 		bot.send_message(message.chat.id, "Пожалуйста, используй встроенную клавиатуру для выбора валюты.")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith(calendar_callback.prefix))
+def callback_inline(call: types.CallbackQuery):
+	name, action, year, month, day = call.data.split(calendar_callback.sep)
+	date_obj = calendar.calendar_query_handler(
+		bot=bot,
+		call=call,
+		name=name,
+		action=action,
+		year=year,
+		month=month,
+		day=day
+	)
+	try:
+		if action == "DAY":
+			message = call.message
+			chat_id = message.chat.id
+			today = datetime.now().date()
+			if date_obj.date() > today:
+				raise FutureDateError("Введенная дата не может быть позже сегодняшнего дня.")
+			date_str = date_obj.strftime('%Y-%m-%d')
+			if chat_id not in user_sessions:
+				user_sessions[chat_id] = {'date_str': date_str}
+			else:
+				user_sessions[chat_id]['date_str'] = date_str
+			calculate_gel_summ(message)
+		elif action == "CANCEL":
+			bot.send_message(call.from_user.id, "Выбор даты отменен")
+			start(call.message)
+			return
+	except FutureDateError as fde:
+		logging.error(f"Ошибка: {fde} Было введено {message.text}")
+		bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
+		send_calendar(call.message)
 
 
 def get_currency(message: types.Message):
@@ -63,9 +99,6 @@ def get_currency(message: types.Message):
 
 def get_amount(message: types.Message):
 	chat_id = message.chat.id
-	if message.text == 'Сбросить':
-		start(message)
-		return
 	try:
 		message_text_normalized = message.text.replace(',', '.')
 		if math.isinf(float(message_text_normalized)):
@@ -75,41 +108,22 @@ def get_amount(message: types.Message):
 			user_sessions[chat_id] = {'amount': amount}
 		else:
 			user_sessions[chat_id]['amount'] = amount
-		msg = bot.send_message(chat_id, f'Напиши дату получения суммы в формате _день-месяц-год_', parse_mode='Markdown')
-		bot.register_next_step_handler(msg, get_convert_date)
+		send_calendar(message)
 	except (ValueError, InvalidOperation) as e:
 		logging.error(f"Ошибка при получении введённой суммы: {e}. Вместо суммы ввели это: {message.text}")
 		msg = bot.send_message(chat_id, f'Используй _цифры_, например _123.45_', parse_mode='Markdown')
 		bot.register_next_step_handler(msg, get_amount)
 
 
-def get_convert_date(message: types.Message):
-	chat_id = message.chat.id
-	if message.text == 'Сбросить':
-		start(message)
-		return
-	date_entered = message.text
-	try:
-		uniform_date_str = re.sub(r'\W+', '-', date_entered)
-		date_obj = datetime.strptime(uniform_date_str, '%d-%m-%Y')
-		today = datetime.now().date()
-		if date_obj.date() > today:
-			raise FutureDateError("Введенная дата не может быть позже сегодняшнего дня.")
-		date_str = date_obj.strftime('%Y-%m-%d')
-		if chat_id not in user_sessions:
-			user_sessions[chat_id] = {'date_str': date_str}
-		else:
-			user_sessions[chat_id]['date_str'] = date_str
-		calculate_gel_summ(message)
-	except FutureDateError as fde:
-		logging.error(f"Ошибка: {fde} Было введено {message.text}")
-		bot.send_message(chat_id, 'Будущее не написано, его можно изменить. Введенная дата не может быть позже сегодняшнего дня.')
-		msg = bot.send_message(chat_id, f'Напиши дату получения суммы в формате _день-месяц-год_', parse_mode='Markdown')
-		bot.register_next_step_handler(msg, get_convert_date)
-	except Exception as e:
-		logging.error(f"Ошибка при работе с введённой датой: {e} Было введено {message.text}")
-		msg = bot.send_message(message.from_user.id, f'Напиши дату получения суммы в формате _день-месяц-год_, например _21-12-2023_', parse_mode='Markdown')
-		bot.register_next_step_handler(msg, get_convert_date)
+def send_calendar(message):
+    chat_id = message.chat.id
+    now = datetime.now()
+    markup = calendar.create_calendar(
+        name=calendar_callback.prefix,
+        year=now.year,
+        month=now.month
+    )
+    bot.send_message(chat_id, "Выбери дату:", reply_markup=markup)
 
 
 def calculate_gel_summ(message):
