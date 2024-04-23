@@ -33,8 +33,10 @@ calendar = Calendar(language=RUSSIAN_LANGUAGE)
 calendar_callback = CallbackData("calendar", "action", "year", "month", "day")
 
 def send_currency_keyboard(chat_id, text='Выбери валюту'):
-	markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-	markup.add(types.KeyboardButton('USD'), types.KeyboardButton('EUR'))
+	markup = types.InlineKeyboardMarkup()
+	usd_button = types.InlineKeyboardButton('USD 💵', callback_data='USD')
+	eur_button = types.InlineKeyboardButton('EUR 💶', callback_data='EUR')
+	markup.add(usd_button, eur_button)
 	bot.send_message(chat_id, text, reply_markup=markup)
 
 
@@ -44,12 +46,18 @@ def start(message):
 	send_currency_keyboard(message.chat.id, 'Пожалуйста, используй встроенную клавиатуру для выбора валюты.')
 
 
-@bot.message_handler(func=lambda message: True)
-def message_handler(message):
-	if message.text == 'USD' or message.text == 'EUR':
-		get_currency(message)
+@bot.callback_query_handler(func=lambda call: call.data in ['USD', 'EUR'])
+def handle_currency_call(call):
+	chosen_currency = call.data
+	chat_id = call.message.chat.id
+	if chat_id not in user_sessions:
+		user_sessions[chat_id] = {'chosen_currency': chosen_currency}
 	else:
-		bot.send_message(message.chat.id, "Пожалуйста, используй встроенную клавиатуру для выбора валюты.")
+		user_sessions[chat_id]['chosen_currency'] = chosen_currency
+	bot.answer_callback_query(call.id)
+	msg = bot.send_message(chat_id, f'Напиши сумму дохода в {chosen_currency}')
+	bot.register_next_step_handler(msg, get_amount)
+
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith(calendar_callback.prefix))
 def callback_inline(call: types.CallbackQuery):
@@ -86,18 +94,7 @@ def callback_inline(call: types.CallbackQuery):
 		send_calendar(call.message)
 
 
-def get_currency(message: types.Message):
-	chosen_currency = message.text
-	chat_id = message.chat.id
-	if chat_id not in user_sessions:
-		user_sessions[chat_id] = {'chosen_currency': chosen_currency}
-	else:
-		user_sessions[chat_id]['chosen_currency'] = chosen_currency
-	msg = bot.send_message(chat_id, f'Напиши сумму дохода в {chosen_currency}')
-	bot.register_next_step_handler(msg, get_amount)
-
-
-def get_amount(message: types.Message):
+def get_amount(message):
 	chat_id = message.chat.id
 	try:
 		message_text_normalized = message.text.replace(',', '.')
