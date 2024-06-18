@@ -3,12 +3,15 @@ from datetime import datetime
 from telebot import types
 from telebot_calendar import Calendar, CallbackData, RUSSIAN_LANGUAGE
 from bot_config import TELEGRAM_TOKEN
+
 import json
 import re
 import math
 import requests
 import telebot
 import logging
+import sqlite3
+
 
 class FutureDateError(Exception):
 	def __init__(self, date, message="Future Date Error!"):
@@ -29,8 +32,24 @@ months_ru = {
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+db_address = "../data/lari_course_bot.db"
+
 calendar = Calendar(language=RUSSIAN_LANGUAGE)
 calendar_callback = CallbackData("calendar", "action", "year", "month", "day")
+
+
+def init_db():
+	conn = sqlite3.connect(db_address)
+	cursor = conn.cursor()
+	cursor.execute('''
+		CREATE TABLE IF NOT EXISTS users
+		(chat_id INTEGER PRIMARY KEY)
+		''')
+	conn.commit()
+	conn.close()
+
+init_db()
+
 
 def send_currency_keyboard(chat_id, text='Выбери валюту'):
 	markup = types.InlineKeyboardMarkup()
@@ -42,8 +61,16 @@ def send_currency_keyboard(chat_id, text='Выбери валюту'):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-	bot.send_message(message.chat.id, 'Выбери валюту')
-	send_currency_keyboard(message.chat.id, 'Пожалуйста, используй встроенную клавиатуру для выбора валюты.')
+	chat_id = message.chat.id
+	
+	conn = sqlite3.connect(db_address)
+	cursor = conn.cursor()
+	cursor.execute('INSERT OR IGNORE INTO users (chat_id) VALUES (?)', (chat_id,))
+	conn.commit()
+	conn.close()
+
+	bot.send_message(chat_id, 'Выбери валюту')
+	send_currency_keyboard(chat_id, 'Пожалуйста, используй встроенную клавиатуру для выбора валюты.')
 
 
 @bot.callback_query_handler(func=lambda call: call.data in ['USD', 'EUR'])
